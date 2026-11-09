@@ -64,8 +64,8 @@
         }
 
         .status-safe { background-color: #e2f0d9; color: #385723; }
-        .status-blocked { 
-            background-color: #fce4d6; color: #c65911; 
+        .status-blocked {
+            background-color: #fce4d6; color: #c65911;
             animation: pulse 1s infinite alternate;
         }
 
@@ -94,7 +94,6 @@
             background-color: rgba(0,0,0,0.02);
         }
 
-        /* --- FRÖKENS VY (MÖRKT TEMA) --- */
         body.teacher-mode {
             --bg-color: #18191a;
             --card-bg: #242526;
@@ -150,7 +149,6 @@
             letter-spacing: 2px;
         }
 
-        /* --- HEMLIG LOGGIN-KNAPP --- */
         .secret-trigger {
             position: fixed; bottom: 15px; right: 15px;
             background: none; border: none; color: #8a8d91;
@@ -158,29 +156,22 @@
         }
         .secret-trigger:hover { opacity: 1; }
 
-        /* --- ANIMATIONER --- */
         @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.03); } }
         @keyframes flash { 0%, 100% { background-color: var(--danger); } 50% { background-color: #7b1111; } }
         .hidden { display: none !important; }
     </style>
 </head>
 <body>
-
-    <!-- ================= ELEVENS PANEL (WILLE) ================= -->
     <div id="willePanel" class="card">
         <h1>Munkmoraskolan – Elevterminal</h1>
         <p>Inloggad elev: <strong>Wille</strong></p>
-        
         <div id="willeStatus" class="status-badge status-safe">🛡️ System skyddat och aktivt</div>
-        
         <div id="countdownBox" class="hidden">
             <p style="color: var(--danger); margin-bottom: 5px; font-weight: bold;">TID KVAR PÅ BAN:</p>
             <div id="willeTimer" class="timer-display">10:00</div>
         </div>
-
         <div id="willeControls">
             <button id="btnShare" class="btn">🔗 Starta skärmströmning till Fröken</button>
-            
             <div class="simulation-zone">
                 <h3>Säkerhetstest (Simulering)</h3>
                 <p>Klicka nedan för att simulera att Wille öppnar fliken Myinstants.</p>
@@ -189,46 +180,33 @@
         </div>
     </div>
 
-    <!-- ================= LÄRARENS PANEL (FRÖKEN) ================= -->
     <div id="teacherPanel" class="card hidden">
         <h1>Lärarpanel: Övervakning klassrum</h1>
         <p>Administratörsbehörighet godkänd</p>
-
-        <div id="teacherAlert" class="teacher-alert hidden">
-            🚨 SYSTEMLARM: WILLE SURFAR PÅ MYINSTANTS! 🚨
-        </div>
-
+        <div id="teacherAlert" class="teacher-alert hidden">🚨 SYSTEMLARM: WILLE SURFAR PÅ MYINSTANTS! 🚨</div>
         <div class="stream-container">
             <div class="live-tag">LIVE</div>
-            <!-- Denna tagg fångar upp skärmdelningen på riktigt om den körs lokalt -->
             <video id="screenVideo" autoplay playsinline muted></video>
             <div id="videoPlaceholder">Ingen aktiv skärmdelning hittades</div>
         </div>
-
         <div id="teacherTimerBox" class="hidden">
             <p>Willes avstängningstid:</p>
             <div id="teacherTimer" class="timer-display">10:00</div>
         </div>
-
         <div>
             <button id="btnReset" class="btn btn-danger">Nollställ Larm & Häv Ban</button>
             <button id="btnLogout" class="btn btn-secondary">Logga ut från panelen</button>
         </div>
     </div>
 
-    <!-- Hemlig inloggningspunkt -->
     <button id="secretLogin" class="secret-trigger">🔒 [Lärarinloggning]</button>
-
-    <!-- Pipljud -->
-    <audio id="siren" src="https://google.com" loop></audio>
+    <audio id="siren" loop></audio>
 
     <script>
-        // DOM Element
         const willePanel = document.getElementById('willePanel');
         const teacherPanel = document.getElementById('teacherPanel');
         const secretLogin = document.getElementById('secretLogin');
         const btnLogout = document.getElementById('btnLogout');
-        
         const btnShare = document.getElementById('btnShare');
         const btnTrigger = document.getElementById('btnTrigger');
         const willeStatus = document.getElementById('willeStatus');
@@ -236,7 +214,6 @@
         const willeTimer = document.getElementById('willeTimer');
         const willeControls = document.getElementById('willeControls');
         const siren = document.getElementById('siren');
-
         const teacherAlert = document.getElementById('teacherAlert');
         const screenVideo = document.getElementById('screenVideo');
         const videoPlaceholder = document.getElementById('videoPlaceholder');
@@ -245,18 +222,26 @@
         const btnReset = document.getElementById('btnReset');
 
         let countdownInterval;
+        let activeStream;
+        let clearingAlarm = false;
 
-        // --- AUTENTISERING (FRÖKENKOD) ---
+        function formatTime(milliseconds) {
+            const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
         secretLogin.addEventListener('click', () => {
-            const password = prompt("Skriv in frökens unika kod:");
-            if (password === "frok123willeban") {
+            const password = prompt('Skriv in frökens unika kod:');
+            if (password === 'frok123willeban') {
                 document.body.classList.add('teacher-mode');
                 willePanel.classList.add('hidden');
                 secretLogin.classList.add('hidden');
                 teacherPanel.classList.remove('hidden');
                 syncPanelData();
             } else if (password !== null) {
-                alert("Felaktig kod. Behörighetsfel.");
+                alert('Felaktig kod. Behörighetsfel.');
             }
         });
 
@@ -265,118 +250,149 @@
             teacherPanel.classList.add('hidden');
             willePanel.classList.remove('hidden');
             secretLogin.classList.remove('hidden');
-            clearInterval(countdownInterval);
+            document.body.style.backgroundColor = '';
+            syncPanelData();
         });
 
-        // --- SKÄRMDELNINGSLOGIK (WebRTC) ---
         btnShare.addEventListener('click', async () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+                alert('Skärmdelning stöds inte i den här webbläsaren eller kräver en säker anslutning (HTTPS).');
+                return;
+            }
+
             try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                willeStatus.innerText = "📺 Skärm delas aktivt med lärare";
+                activeStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                willeStatus.innerText = '📺 Skärm delas aktivt med lärare';
                 btnShare.style.display = 'none';
                 localStorage.setItem('sys_screen_streaming', 'true');
-
-                // Om det finns en videotagg (t.ex. i frökens flik på samma dator), visa strömmen där
-                screenVideo.srcObject = stream;
+                screenVideo.srcObject = activeStream;
                 videoPlaceholder.classList.add('hidden');
-stream.getVideoTracks()[0].onended = () => {
-willeStatus.innerText = "🛡️ System skyddat och aktivt";
-btnShare.style.display = 'inline-block';
-localStorage.setItem('sys_screen_streaming', 'false');
-videoPlaceholder.classList.remove('hidden');
-screenVideo.srcObject = null;
-};
-} catch (err) {
-alert("Åtgärd krävs: Du måste tillåta skärmdelning för skoldatorn.");
-}
-});
-// --- ALARMLOGIK (MYINSTANTS SPÄRR) ---
-btnTrigger.addEventListener('click', () => {
-localStorage.setItem('sys_alarm_state', 'true');
-localStorage.setItem('sys_ban_time', Date.now() + (10 * 60 * 1000)); // 10 minuter framåt
-executeLocalBan();
-setTimeout(() => {
-alert("Dator bannad på 10 minuter. Fröken kommer nu.");
-}, 100);
-});
-function executeLocalBan() {
-willeStatus.innerText = "❌ DATOR BLOCKERAD – OTILLÅTEN SIDA";
-willeStatus.className = "status-badge status-blocked";
-willeControls.classList.add('hidden');
-countdownBox.classList.remove('hidden');
-siren.play().catch(() => console.log("Ljudet startar vid nästa klick."));
-startTimerCountdown();
-}
-// --- TIMER OCH SYNKRONISERING ---
-function startTimerCountdown() {
-clearInterval(countdownInterval);
-countdownInterval = setInterval(() => {
-const targetTime = localStorage.getItem('sys_ban_time');
-if (!targetTime) return clearInterval(countdownInterval);
-const timeLeft = targetTime - Date.now();
-if (timeLeft <= 0) {
-clearInterval(countdownInterval);
-clearAllAlarms();
-} else {
-const minutes = Math.floor(timeLeft / 60000);
-const seconds = Math.floor((timeLeft % 60000) / 1000);
-const formattedTime = ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')};
-willeTimer.innerText = formattedTime;
-teacherTimer.innerText = formattedTime;
-}
-}, 1000);
-}
-function syncPanelData() {
-// Synka larmstatus
-if (localStorage.getItem('sys_alarm_state') === 'true') {
-teacherAlert.classList.remove('hidden');
-teacherTimerBox.classList.remove('hidden');
-document.body.style.backgroundColor = "#3a1111";
-startTimerCountdown();
-} else {
-teacherAlert.classList.add('hidden');
-teacherTimerBox.classList.add('hidden');
-if(document.body.classList.contains('teacher-mode')) document.body.style.backgroundColor = "#18191a";
-}
-// Synka videoskärm-texten
-if (localStorage.getItem('sys_screen_streaming') === 'true') {
-videoPlaceholder.innerText = "[SKÄRM AKTIV] Wille delar sitt skrivbord";
-videoPlaceholder.style.color = "var(--success)";
-} else {
-videoPlaceholder.innerText = "Ingen aktiv skärmdelning hittades";
-videoPlaceholder.style.color = "#b0b3b8";
-}
-}
-// Lyssna på Storage-händelser (när den andra fliken uppdaterar något)
-window.addEventListener('storage', (e) => {
-if (e.key === 'sys_alarm_state') {
-if (e.newValue === 'true') {
-if (!willePanel.classList.contains('hidden')) executeLocalBan();
-syncPanelData();
-} else {
-clearAllAlarms();
-}
-}
-if (e.key === 'sys_screen_streaming') {
-syncPanelData();
-}
-});
-// Frökens återställningsfunktion
-function clearAllAlarms() {
-localStorage.setItem('sys_alarm_state', 'false');
-localStorage.removeItem('sys_ban_time');
-clearInterval(countdownInterval);
-// Återställ Wille
-siren.pause();
-siren.currentTime = 0;
-willeStatus.innerText = "🛡️ System skyddat och aktivt";
-willeStatus.className = "status-badge status-safe";
-willeControls.classList.remove('hidden');
-countdownBox.classList.add('hidden');
-// Återställ Fröken
-syncPanelData();
-}
-btnReset.addEventListener('click', () => {
-clearAllAlarms();
-alert("Larmet nollställt och Willes dator har låsts upp.");
-});
+
+                const videoTrack = activeStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.addEventListener('ended', stopScreenShare, { once: true });
+                }
+            } catch (error) {
+                console.error('Screen sharing failed:', error);
+                alert('Skärmdelningen startades inte. Kontrollera behörigheten och försök igen.');
+            }
+        });
+
+        function stopScreenShare() {
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+                activeStream = null;
+            }
+            willeStatus.innerText = '🛡️ System skyddat och aktivt';
+            btnShare.style.display = '';
+            localStorage.setItem('sys_screen_streaming', 'false');
+            screenVideo.srcObject = null;
+            videoPlaceholder.classList.remove('hidden');
+            syncPanelData();
+        }
+
+        btnTrigger.addEventListener('click', () => {
+            const targetTime = Date.now() + 10 * 60 * 1000;
+            localStorage.setItem('sys_ban_time', String(targetTime));
+            localStorage.setItem('sys_alarm_state', 'true');
+            executeLocalBan();
+            setTimeout(() => alert('Dator bannad på 10 minuter. Fröken kommer nu.'), 100);
+        });
+
+        function executeLocalBan() {
+            willeStatus.innerText = '❌ DATOR BLOCKERAD – OTILLÅTEN SIDA';
+            willeStatus.className = 'status-badge status-blocked';
+            willeControls.classList.add('hidden');
+            countdownBox.classList.remove('hidden');
+            siren.play().catch(() => console.log('Siren playback was blocked by the browser.'));
+            startTimerCountdown();
+        }
+
+        function startTimerCountdown() {
+            clearInterval(countdownInterval);
+            const updateCountdown = () => {
+                const targetTime = Number(localStorage.getItem('sys_ban_time'));
+                if (!targetTime || localStorage.getItem('sys_alarm_state') !== 'true') {
+                    clearInterval(countdownInterval);
+                    return;
+                }
+
+                const timeLeft = targetTime - Date.now();
+                if (timeLeft <= 0) {
+                    clearAllAlarms();
+                    return;
+                }
+
+                const formattedTime = formatTime(timeLeft);
+                willeTimer.innerText = formattedTime;
+                teacherTimer.innerText = formattedTime;
+            };
+
+            updateCountdown();
+            if (localStorage.getItem('sys_alarm_state') === 'true') {
+                countdownInterval = setInterval(updateCountdown, 1000);
+            }
+        }
+
+        function syncPanelData() {
+            const alarmActive = localStorage.getItem('sys_alarm_state') === 'true';
+            const streaming = localStorage.getItem('sys_screen_streaming') === 'true';
+
+            if (alarmActive) {
+                teacherAlert.classList.remove('hidden');
+                teacherTimerBox.classList.remove('hidden');
+                document.body.style.backgroundColor = '#3a1111';
+                startTimerCountdown();
+            } else {
+                teacherAlert.classList.add('hidden');
+                teacherTimerBox.classList.add('hidden');
+                document.body.style.backgroundColor = document.body.classList.contains('teacher-mode') ? '#18191a' : '';
+            }
+
+            if (streaming) {
+                videoPlaceholder.innerText = '[SKÄRM AKTIV] Wille delar sitt skrivbord';
+                videoPlaceholder.style.color = 'var(--success)';
+            } else {
+                videoPlaceholder.innerText = 'Ingen aktiv skärmdelning hittades';
+                videoPlaceholder.style.color = '#b0b3b8';
+            }
+        }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'sys_alarm_state' || event.key === 'sys_ban_time') {
+                if (localStorage.getItem('sys_alarm_state') === 'true') {
+                    if (!willePanel.classList.contains('hidden')) executeLocalBan();
+                    syncPanelData();
+                } else if (event.key === 'sys_alarm_state') {
+                    clearAllAlarms();
+                }
+            }
+            if (event.key === 'sys_screen_streaming') syncPanelData();
+        });
+
+        function clearAllAlarms() {
+            if (clearingAlarm) return;
+            clearingAlarm = true;
+            localStorage.setItem('sys_alarm_state', 'false');
+            localStorage.removeItem('sys_ban_time');
+            clearInterval(countdownInterval);
+
+            siren.pause();
+            siren.currentTime = 0;
+            willeStatus.innerText = '🛡️ System skyddat och aktivt';
+            willeStatus.className = 'status-badge status-safe';
+            willeControls.classList.remove('hidden');
+            countdownBox.classList.add('hidden');
+            syncPanelData();
+            clearingAlarm = false;
+        }
+
+        btnReset.addEventListener('click', () => {
+            clearAllAlarms();
+            alert('Larmet nollställt och Willes dator har låsts upp.');
+        });
+
+        syncPanelData();
+    </script>
+</body>
+</html>
